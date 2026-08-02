@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play } from 'lucide-react';
+import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff } from 'lucide-react';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
@@ -8,8 +8,8 @@ const SYSTEM_PROMPT = `You are RemindAI, a reminder assistant. Today is {{CURREN
 
 Rules:
 - Accept ANY natural language, fix typos silently.
+- If the user provides multiple reminder commands in one message (e.g. "drink water in 10m, call dad at 6pm, and pay bills tomorrow"), parse EVERY item and return separate reminder objects in the "reminders" array!
 - If the user mentions a goal/event without enough details (time, date), ask ONE short follow-up question.
-- Once you have enough info, break big tasks into sub-reminders across days.
 - Support any future date/time for reminders.
 - Keep replies short and friendly.
 
@@ -35,6 +35,51 @@ export default function App() {
   const [soundPreset, setSoundPreset] = useState('sine'); // 'sine', 'chime', 'marimba', 'custom'
   const [customSoundUrl, setCustomSoundUrl] = useState('');
   const [customFileName, setCustomFileName] = useState('');
+
+  // Voice Input State
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const toggleVoiceInput = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported on this browser. Please use Chrome on Android or Desktop.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        setInput(transcript);
+      };
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+      recognition.onend = () => setIsListening(false);
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.warn('Speech recognition init failed:', e);
+      setIsListening(false);
+    }
+  };
 
   const chatEndRef = useRef(null);
 
@@ -327,7 +372,7 @@ export default function App() {
     }
   };
 
-  const handleLocalAssistant = (text) => {
+  const parseSingleLocalReminder = (text) => {
     const lower = text.toLowerCase().trim();
 
     // 1. Simple Greetings
@@ -338,7 +383,7 @@ export default function App() {
       };
     }
 
-    // Helper to sanitize title: removes prefixes anywhere in text, time phrases, and trailing prepositions
+    // Helper to sanitize title
     const sanitizeTitle = (str) => {
       let t = str
         .replace(/(?:remind me to|remember to|schedule|i have an|i have a|i have)\s+/gi, '')
@@ -348,7 +393,6 @@ export default function App() {
         .replace(/\b(tomorrow|tmrw|today|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi, '')
         .trim();
 
-      // Remove trailing prepositions (e.g. "on", "at", "for", "in", "to", "by")
       t = t.replace(/\s+\b(on|at|for|in|to|by)\b$/i, '').trim();
       t = t.replace(/^(to\s+)/i, '').trim();
 
@@ -365,22 +409,19 @@ export default function App() {
       if (ampm === 'pm' && hours < 12) hours += 12;
       else if (ampm === 'am' && hours === 12) hours = 0;
       else if (!ampm) {
-        // If current time is afternoon (>= 12), and specified hours < 12, assume PM!
         if (now.getHours() >= 12 && hours < 12) {
           hours += 12;
         }
       }
 
       target.setHours(hours, m, 0, 0);
-
-      // If not explicitly "today" and time has passed, roll over to tomorrow
       if (!isToday && target.getTime() <= now.getTime()) {
         target.setDate(target.getDate() + 1);
       }
       return target;
     };
 
-    // 2. Ambiguous Inputs without Time
+    // Ambiguous Inputs without Time
     if (/^(i have an|i have a|i have)\s+[a-z\s]+$/i.test(text) && !/(today|tomorrow|tmrw|\d+|at|in|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(text)) {
       const cleanEvent = sanitizeTitle(text);
       return {
@@ -389,7 +430,6 @@ export default function App() {
       };
     }
 
-    // 3. Smart Time & Date Parser
     let date = new Date();
     let matched = false;
     const hasToday = /\btoday\b/i.test(lower);
@@ -405,7 +445,7 @@ export default function App() {
       matched = true;
     }
 
-    // Pattern B: "bath at 3 45" / "bath today 3 45" / "call dad at 6pm"
+    // Pattern B: "bath at 3 45" / "call dad at 6pm"
     const atTimeMatch = lower.match(/(?:at\s+)?(\d{1,2})(?::(\d{2})|\s+(\d{2}))\s*(pm|am)?/i);
     if (atTimeMatch && !matched) {
       const hours = parseInt(atTimeMatch[1], 10);
@@ -439,11 +479,40 @@ export default function App() {
       };
     }
 
-    // Fallback: prompt for time
     return {
       message: `Got it! What time would you like me to set the reminder for "${cleanTitle}"? (e.g. "at 6pm" or "in 10 minutes")`,
       reminders: []
     };
+  };
+
+  const handleLocalAssistant = (text) => {
+    // Check for multi-reminder input (e.g. "drink water in 10m, call dad at 6pm, and pay bills tomorrow")
+    const clauses = text.split(/(?:,|\n|;|\band\b)/i)
+      .map(c => c.trim())
+      .filter(c => c.length > 2 && /(in\s+\d+|at\s+\d+|\d+\s*(?:pm|am)|tomorrow|tmrw|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(c));
+
+    if (clauses.length > 1) {
+      const allReminders = [];
+      const lines = [];
+
+      clauses.forEach(clause => {
+        const res = parseSingleLocalReminder(clause);
+        if (res.reminders.length > 0) {
+          allReminders.push(...res.reminders);
+          const r = res.reminders[0];
+          lines.push(`• **${r.title}** (${formatTime(r.time)})`);
+        }
+      });
+
+      if (allReminders.length > 0) {
+        return {
+          message: `Got it! I created ${allReminders.length} separate reminders for you:\n\n${lines.join('\n')}`,
+          reminders: allReminders
+        };
+      }
+    }
+
+    return parseSingleLocalReminder(text);
   };
 
   const handleSend = async (e) => {
@@ -575,9 +644,17 @@ export default function App() {
           </div>
 
           <form className="chat-input-row" onSubmit={handleSend}>
+            <button
+              type="button"
+              className={`mic-btn ${isListening ? 'listening' : ''}`}
+              onClick={toggleVoiceInput}
+              title={isListening ? "Listening... Click to stop" : "Speak your reminder"}
+            >
+              {isListening ? <MicOff size={18} color="#f87171" /> : <Mic size={18} />}
+            </button>
             <textarea
               className="chat-input"
-              placeholder="Type anything… e.g. 'I have an exam next Monday'"
+              placeholder={isListening ? "Listening... Speak now..." : "Speak or type… e.g. 'drink water in 10m and call dad at 6pm'"}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}

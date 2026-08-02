@@ -265,6 +265,33 @@ body {
 .send-btn:hover:not(:disabled) { background: #5b58e8; transform: translateY(-1px); }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.mic-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--txt-muted);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all .2s;
+}
+.mic-btn:hover { background: rgba(255,255,255,0.1); color: var(--txt); }
+.mic-btn.listening {
+  background: rgba(248,113,113,0.2);
+  border-color: var(--danger);
+  color: var(--danger);
+  animation: micPulse 1.2s infinite;
+}
+
+@keyframes micPulse {
+  0% { box-shadow: 0 0 0 0 rgba(248,113,113,0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(248,113,113,0); }
+  100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); }
+}
+
 /* ─── Dashboard ──────────────────────────────────────── */
 .dashboard {
   display: flex;
