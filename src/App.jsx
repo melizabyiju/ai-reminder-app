@@ -76,7 +76,7 @@ export default function App() {
   }, [reminders]);
 
   const triggerAlert = (title) => {
-    // Sound
+    // Sound & Haptics
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const oscillator = ctx.createOscillator();
@@ -86,19 +86,30 @@ export default function App() {
       oscillator.frequency.value = 880;
       oscillator.type = 'sine';
       gain.gain.setValueAtTime(0.5, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
       oscillator.start(ctx.currentTime);
-      oscillator.stop(ctx.currentTime + 1);
+      oscillator.stop(ctx.currentTime + 1.5);
     } catch (e) {}
 
-    // Browser notification
+    // Android & Desktop System Notification Shade (Drop-down banner)
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('⏰ Reminder!', {
+      const options = {
         body: title,
-        icon: '/icon.png',
+        icon: 'https://api.iconify.design/noto:bell.svg',
+        badge: 'https://api.iconify.design/noto:bell.svg',
+        vibrate: [300, 100, 300, 100, 300],
         requireInteraction: true,
-        tag: title
-      });
+        renotify: true,
+        tag: `rem_${Date.now()}`
+      };
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+          .then(reg => reg.showNotification('⏰ RemindAI Task Due!', options))
+          .catch(() => new Notification('⏰ RemindAI Task Due!', options));
+      } else {
+        new Notification('⏰ RemindAI Task Due!', options);
+      }
     }
   };
 

@@ -3,21 +3,18 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
 
 self.addEventListener('push', (event) => {
-  let data = { title: '⏰ Reminder!', body: 'A task is due now.' };
+  let data = { title: '⏰ RemindAI Task Due!', body: 'A task is due now.' };
   try { if (event.data) data = event.data.json(); } catch (e) {}
 
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/icon.png',
-      badge: '/icon.png',
-      vibrate: [200, 100, 200],
+      icon: 'https://api.iconify.design/noto:bell.svg',
+      badge: 'https://api.iconify.design/noto:bell.svg',
+      vibrate: [300, 100, 300, 100, 300],
       requireInteraction: true,
-      tag: data.title,
-      actions: [
-        { action: 'open',    title: 'Open App' },
-        { action: 'dismiss', title: 'Dismiss'  }
-      ]
+      renotify: true,
+      tag: `push_${Date.now()}`
     })
   );
 });
