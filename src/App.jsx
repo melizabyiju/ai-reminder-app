@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play } from 'lucide-react';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
@@ -29,9 +29,16 @@ export default function App() {
   const [geminiKey, setGeminiKey] = useState('');
   const [tempKey, setTempKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Sound Settings State
+  const [isMuted, setIsMuted] = useState(false);
+  const [soundPreset, setSoundPreset] = useState('sine'); // 'sine', 'chime', 'marimba', 'custom'
+  const [customSoundUrl, setCustomSoundUrl] = useState('');
+  const [customFileName, setCustomFileName] = useState('');
+
   const chatEndRef = useRef(null);
 
-  // On mount: load reminders + API key, clear chat (fresh session)
+  // On mount: load reminders + API key + sound settings, clear chat
   useEffect(() => {
     const savedReminders = localStorage.getItem('reminders');
     if (savedReminders) setReminders(JSON.parse(savedReminders));
@@ -41,6 +48,18 @@ export default function App() {
       setGeminiKey(savedKey);
       setTempKey(savedKey);
     }
+
+    const savedMuted = localStorage.getItem('alarm_muted');
+    if (savedMuted !== null) setIsMuted(savedMuted === 'true');
+
+    const savedPreset = localStorage.getItem('alarm_preset');
+    if (savedPreset) setSoundPreset(savedPreset);
+
+    const savedCustomUrl = localStorage.getItem('alarm_custom_url');
+    if (savedCustomUrl) setCustomSoundUrl(savedCustomUrl);
+
+    const savedCustomName = localStorage.getItem('alarm_custom_name');
+    if (savedCustomName) setCustomFileName(savedCustomName);
 
     if ('Notification' in window) setNotifStatus(Notification.permission);
 
@@ -56,6 +75,88 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Audio Playback Synth / Audio File Player
+  const playAlarmSound = (overridePreset = null, overrideCustomUrl = null) => {
+    if (isMuted && !overridePreset) return;
+
+    const preset = overridePreset || soundPreset;
+    const customUrl = overrideCustomUrl || customSoundUrl;
+
+    if (preset === 'custom' && customUrl) {
+      const audio = new Audio(customUrl);
+      audio.play().catch(e => console.warn('Custom audio playback failed:', e));
+      return;
+    }
+
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (preset === 'chime') {
+        // Soft double-chime (E5 -> A5)
+        [659.25, 880].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = 'sine';
+          gain.gain.setValueAtTime(0.4, ctx.currentTime + i * 0.25);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.25 + 0.8);
+          osc.start(ctx.currentTime + i * 0.25);
+          osc.stop(ctx.currentTime + i * 0.25 + 0.8);
+        });
+      } else if (preset === 'marimba') {
+        // Marimba 3-note melody (C5 -> E5 -> G5)
+        [523.25, 659.25, 783.99].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = 'triangle';
+          gain.gain.setValueAtTime(0.5, ctx.currentTime + i * 0.15);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.5);
+          osc.start(ctx.currentTime + i * 0.15);
+          osc.stop(ctx.currentTime + i * 0.15 + 0.5);
+        });
+      } else {
+        // Default Beep
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 1.2);
+      }
+    } catch (e) {}
+  };
+
+  // Custom Audio File Upload Handler
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Audio file size should be less than 8MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target.result;
+      setCustomSoundUrl(dataUrl);
+      setCustomFileName(file.name);
+      setSoundPreset('custom');
+      localStorage.setItem('alarm_custom_url', dataUrl);
+      localStorage.setItem('alarm_custom_name', file.name);
+      localStorage.setItem('alarm_preset', 'custom');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Reminder alarm scanner — every 5 seconds
   useEffect(() => {
@@ -73,25 +174,13 @@ export default function App() {
       if (changed) saveReminders(updated);
     }, 5000);
     return () => clearInterval(interval);
-  }, [reminders]);
+  }, [reminders, isMuted, soundPreset, customSoundUrl]);
 
   const triggerAlert = (title) => {
     // Sound & Haptics
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.frequency.value = 880;
-      oscillator.type = 'sine';
-      gain.gain.setValueAtTime(0.5, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
-      oscillator.start(ctx.currentTime);
-      oscillator.stop(ctx.currentTime + 1.5);
-    } catch (e) {}
+    playAlarmSound();
 
-    // Android & Desktop System Notification Shade (Drop-down banner)
+    // Android & Desktop System Notification Shade
     if ('Notification' in window && Notification.permission === 'granted') {
       const options = {
         body: title,
@@ -100,7 +189,7 @@ export default function App() {
         vibrate: [300, 100, 300, 100, 300],
         requireInteraction: true,
         renotify: true,
-        silent: false,
+        silent: isMuted,
         timestamp: Date.now(),
         tag: `rem_${Date.now()}`
       };
@@ -576,30 +665,110 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
           <div className="modal glass" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Configuration</h3>
+              <h3>Settings & Configuration</h3>
               <button className="icon-btn" onClick={() => setShowSettings(false)}><X size={18} /></button>
             </div>
-            <label className="modal-label">Gemini API Key</label>
-            <input
-              type="password"
-              className="modal-input"
-              placeholder="Paste your API key…"
-              value={tempKey}
-              onChange={e => setTempKey(e.target.value)}
-            />
-            <p className="modal-hint">
-              Get a free key at{' '}
-              <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer">
-                Google AI Studio
-              </a>. It is stored only in your browser.
-            </p>
+
+            {/* AI API Section */}
+            <div style={{ marginBottom: '20px' }}>
+              <label className="modal-label">Gemini API Key</label>
+              <input
+                type="password"
+                className="modal-input"
+                placeholder="Paste your API key…"
+                value={tempKey}
+                onChange={e => setTempKey(e.target.value)}
+              />
+              <p className="modal-hint">
+                Get a free key at{' '}
+                <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer">
+                  Google AI Studio
+                </a>. Stored locally in browser.
+              </p>
+            </div>
+
+            {/* Sound & Notification Settings */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <span className="modal-label" style={{ margin: 0, fontWeight: 600, color: 'var(--txt)' }}>
+                  Alarm Sound Settings
+                </span>
+                <button
+                  type="button"
+                  className="notif-btn"
+                  style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                  onClick={() => {
+                    const newMuted = !isMuted;
+                    setIsMuted(newMuted);
+                    localStorage.setItem('alarm_muted', newMuted.toString());
+                  }}
+                >
+                  {isMuted ? <><VolumeX size={14} color="#f87171" /> Muted</> : <><Volume2 size={14} color="#34d399" /> Sound On</>}
+                </button>
+              </div>
+
+              {!isMuted && (
+                <>
+                  <label className="modal-label">Select Alarm Tone</label>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <select
+                      className="modal-input"
+                      value={soundPreset}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setSoundPreset(val);
+                        localStorage.setItem('alarm_preset', val);
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      <option value="sine">🔔 Default Beep</option>
+                      <option value="chime">✨ Gentle Chime</option>
+                      <option value="marimba">🎵 Marimba Melody</option>
+                      <option value="custom">📁 Custom Audio File</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => playAlarmSound(soundPreset, customSoundUrl)}
+                      title="Test Sound"
+                    >
+                      <Play size={14} /> Test
+                    </button>
+                  </div>
+
+                  {soundPreset === 'custom' && (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                      <label className="modal-label" style={{ marginBottom: '6px' }}>Upload Audio File (MP3, WAV)</label>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        id="custom-sound-file"
+                        style={{ display: 'none' }}
+                        onChange={handleFileUpload}
+                      />
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <label htmlFor="custom-sound-file" className="btn-ghost" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Upload size={14} /> Choose File
+                        </label>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--txt-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', flex: 1 }}>
+                          {customFileName || 'No custom sound selected'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <div className="modal-actions">
               <button className="btn-ghost" onClick={() => setShowSettings(false)}>Cancel</button>
               <button className="btn-primary" onClick={() => {
                 localStorage.setItem('gemini_api_key', tempKey);
                 setGeminiKey(tempKey);
                 setShowSettings(false);
-              }}>Save</button>
+              }}>Save Settings</button>
             </div>
           </div>
         </div>
