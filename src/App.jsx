@@ -152,7 +152,9 @@ export default function App() {
     }
   };
 
-  const callGemini = async (userText) => {
+  const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+  const callGemini = async (userText, retryCount = 0) => {
     const now = new Date();
     const prompt = SYSTEM_PROMPT.replace('{{CURRENT_TIME}}', now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true, dateStyle: 'full', timeStyle: 'short' }));
 
@@ -172,9 +174,32 @@ export default function App() {
       })
     });
 
-    if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
+    // Handle rate limit — wait and retry up to 2 times
+    if (res.status === 429) {
+      if (retryCount < 2) {
+        const waitSec = (retryCount + 1) * 15;
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          const msg = `⏳ Rate limit reached (free tier: 15 requests/min). Retrying in ${waitSec}s…`;
+          if (last?.role === 'assistant' && last?.isRetryMsg) {
+            return prev.map(m => m.isRetryMsg ? { ...m, text: msg } : m);
+          }
+          return [...prev, { id: Date.now(), role: 'assistant', text: msg, isRetryMsg: true }];
+        });
+        await sleep(waitSec * 1000);
+        // Remove retry message
+        setMessages(prev => prev.filter(m => !m.isRetryMsg));
+        return callGemini(userText, retryCount + 1);
+      }
+      throw new Error('RATE_LIMIT');
+    }
+
+    if (res.status === 400) throw new Error('INVALID_KEY');
+    if (!res.ok) throw new Error(`API_ERROR_${res.status}`);
+
     const data = await res.json();
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) throw new Error('EMPTY_RESPONSE');
     return JSON.parse(raw);
   };
 
@@ -216,11 +241,15 @@ export default function App() {
         addReminders(result.reminders);
       }
     } catch (err) {
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        role: 'assistant',
-        text: `Sorry, I ran into an issue: ${err.message}. Please check your API key in Config.`
-      }]);
+      const msg = err.message === 'RATE_LIMIT'
+        ? "⏳ You've hit the free Gemini rate limit (15 requests/min). Please wait about a minute and try again."
+        : err.message === 'INVALID_KEY'
+        ? "🔑 Your API key looks invalid. Please go to **Config** and paste the correct key from [Google AI Studio](https://aistudio.google.com/)."
+        : err.message === 'EMPTY_RESPONSE'
+        ? "🤔 The AI returned an empty response. Please try rephrasing your message."
+        : `❌ Something went wrong (${err.message}). Please try again.`;
+
+      setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', text: msg }]);
     } finally {
       setIsLoading(false);
     }
