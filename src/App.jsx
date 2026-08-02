@@ -239,21 +239,87 @@ export default function App() {
     }
   };
 
+  const handleLocalAssistant = (text) => {
+    const lower = text.toLowerCase().trim();
+
+    // 1. Simple Greetings
+    if (['hi', 'hello', 'hey', 'hii', 'helo'].includes(lower)) {
+      return {
+        message: "Hello! 👋 What task would you like me to schedule for you?",
+        reminders: []
+      };
+    }
+
+    // 2. Smart Time & Date Parser
+    let title = text;
+    let date = new Date();
+    let matched = false;
+
+    // Pattern: "drink water in 2 min" / "call dad in 10 minutes" / "test in 5m"
+    const inTimeMatch = lower.match(/(?:remind me to|remember to|schedule)?\s*(.+?)\s+in\s+(\d+)\s*(min|mins|minute|minutes|m|hour|hours|h|day|days|d)?/i);
+    if (inTimeMatch) {
+      title = inTimeMatch[1].replace(/^(remind me to|remember to|schedule)\s+/i, '');
+      const num = parseInt(inTimeMatch[2], 10);
+      const unit = (inTimeMatch[3] || 'm').toLowerCase();
+      if (unit.startsWith('h')) date.setHours(date.getHours() + num);
+      else if (unit.startsWith('d')) date.setDate(date.getDate() + num);
+      else date.setMinutes(date.getMinutes() + num);
+      matched = true;
+    }
+
+    // Pattern: "call dad at 6pm" / "meeting at 3:30 pm"
+    const atTimeMatch = lower.match(/(?:remind me to|remember to|schedule)?\s*(.+?)\s+at\s+(\d+)(?::(\d+))?\s*(pm|am)/i);
+    if (atTimeMatch && !matched) {
+      title = atTimeMatch[1].replace(/^(remind me to|remember to|schedule)\s+/i, '');
+      let hours = parseInt(atTimeMatch[2], 10);
+      const minutes = atTimeMatch[3] ? parseInt(atTimeMatch[3], 10) : 0;
+      const ampm = atTimeMatch[4].toLowerCase();
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+      date.setHours(hours, minutes, 0, 0);
+      if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 1);
+      matched = true;
+    }
+
+    // Pattern: "presentation tomorrow" / "exam monday"
+    const dayMatch = lower.match(/(?:remind me to|remember to|schedule)?\s*(.+?)\s+(tomorrow|tmrw|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
+    if (dayMatch && !matched) {
+      title = dayMatch[1].replace(/^(remind me to|remember to|schedule)\s+/i, '');
+      const dayWord = dayMatch[2].toLowerCase();
+      if (dayWord === 'tomorrow' || dayWord === 'tmrw') {
+        date.setDate(date.getDate() + 1);
+        date.setHours(9, 0, 0, 0);
+      } else {
+        date.setDate(date.getDate() + 1);
+      }
+      matched = true;
+    }
+
+    // Clean up title
+    title = title.replace(/^(to\s+)/i, '').trim();
+    if (!title) title = "Scheduled reminder";
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+
+    if (matched) {
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return {
+        message: `Got it! Scheduled "${title}" for ${timeStr}.`,
+        reminders: [{ title, time: date.toISOString() }]
+      };
+    }
+
+    // Default fallback: schedule in 5 minutes
+    const fallbackDate = new Date(Date.now() + 5 * 60000);
+    return {
+      message: `Got it! I've set a reminder for "${title}" in 5 minutes.`,
+      reminders: [{ title, time: fallbackDate.toISOString() }]
+    };
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     const text = input.trim();
     if (!text || isLoading) return;
-
-    if (!geminiKey) {
-      setMessages(prev => [...prev, {
-        id: Date.now(),
-        role: 'assistant',
-        text: "⚙️ Please set your Gemini API key in **Config** first. Get one free at [Google AI Studio](https://aistudio.google.com/)."
-      }]);
-      setShowSettings(true);
-      setInput('');
-      return;
-    }
 
     const userMsg = { id: Date.now(), role: 'user', text };
     setMessages(prev => [...prev, userMsg]);
@@ -261,12 +327,21 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      const result = await callGemini(text);
+      let result = null;
+      if (geminiKey) {
+        try {
+          result = await callGemini(text);
+        } catch (apiErr) {
+          console.warn('AI API rate-limited or unavailable, switching to local smart assistant:', apiErr);
+          result = handleLocalAssistant(text);
+        }
+      } else {
+        result = handleLocalAssistant(text);
+      }
 
       const assistantMsg = { id: Date.now() + 1, role: 'assistant', text: result.message };
       setMessages(prev => [...prev, assistantMsg]);
 
-      // Update conversation history for multi-turn
       setConversationHistory(prev => [
         ...prev,
         { role: 'user', parts: [{ text }] },
@@ -277,15 +352,9 @@ export default function App() {
         addReminders(result.reminders);
       }
     } catch (err) {
-      const msg = err.message === 'RATE_LIMIT'
-        ? "⏳ You've hit the free Gemini rate limit (15 requests/min). Please wait about a minute and try again."
-        : err.message === 'INVALID_KEY'
-        ? "🔑 Your API key looks invalid. Please go to **Config** and paste the correct key from [Google AI Studio](https://aistudio.google.com/)."
-        : err.message === 'EMPTY_RESPONSE'
-        ? "🤔 The AI returned an empty response. Please try rephrasing your message."
-        : `❌ Something went wrong (${err.message}). Please try again.`;
-
-      setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', text: msg }]);
+      const fallback = handleLocalAssistant(text);
+      setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', text: fallback.message }]);
+      if (fallback.reminders?.length > 0) addReminders(fallback.reminders);
     } finally {
       setIsLoading(false);
     }
