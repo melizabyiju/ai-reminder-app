@@ -187,7 +187,14 @@ export default function App() {
     }
 
     if (res.status === 400) throw new Error('INVALID_KEY');
-    if (!res.ok) throw new Error(`API_${res.status}`);
+    if (!res.ok) {
+      let errDetail = `status ${res.status}`;
+      try {
+        const errBody = await res.json();
+        errDetail = errBody?.error?.message || errDetail;
+      } catch {}
+      throw new Error(`API_${res.status}: ${errDetail}`);
+    }
 
     const data = await res.json();
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
