@@ -12,11 +12,15 @@ export default function App() {
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const chatEndRef = useRef(null);
 
-  // Load reminders from localStorage
+  // Load reminders and chat messages from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('reminders');
     if (saved) {
       setReminders(JSON.parse(saved));
+    }
+    const savedMessages = localStorage.getItem('chat_messages');
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
     }
     
     // Check Notification API permission
@@ -31,7 +35,6 @@ export default function App() {
       const now = new Date();
       let updatedAny = false;
       const updatedReminders = reminders.map(r => {
-        // If reminder is not completed, not already notified, and time has passed
         if (!r.completed && !r.notified && new Date(r.time) <= now) {
           // Play alarm sound
           new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-120.wav').play().catch(() => {});
@@ -53,7 +56,7 @@ export default function App() {
       if (updatedAny) {
         saveReminders(updatedReminders);
       }
-    }, 5000); // Check every 5 seconds
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [reminders]);
@@ -62,6 +65,18 @@ export default function App() {
   const saveReminders = (newReminders) => {
     setReminders(newReminders);
     localStorage.setItem('reminders', JSON.stringify(newReminders));
+  };
+
+  // Save chat messages to localStorage
+  const saveMessages = (newMessages) => {
+    setMessages(newMessages);
+    localStorage.setItem('chat_messages', JSON.stringify(newMessages));
+  };
+
+  // Clear chat history
+  const clearChatHistory = () => {
+    const defaultMsg = [{ id: 1, sender: 'assistant', text: "Hello! I am your AI Reminder assistant. Tell me what you need to remember." }];
+    saveMessages(defaultMsg);
   };
 
   // Scroll chat to bottom
@@ -100,7 +115,6 @@ export default function App() {
     let date = new Date();
     let matched = false;
 
-    // "remind me to [do something] in [X] minutes"
     const inMinMatch = lower.match(/(?:remind me to|remember to)\s+(.+?)\s+in\s+(\d+)\s+minute/i);
     if (inMinMatch) {
       title = inMinMatch[1];
@@ -109,7 +123,6 @@ export default function App() {
       matched = true;
     }
 
-    // "remind me to [do something] at [X] pm/am"
     const atTimeMatch = lower.match(/(?:remind me to|remember to)\s+(.+?)\s+at\s+(\d+)(?::(\d+))?\s*(pm|am)/i);
     if (atTimeMatch && !matched) {
       title = atTimeMatch[1];
@@ -121,8 +134,6 @@ export default function App() {
       if (ampm === 'am' && hours === 12) hours = 0;
       
       date.setHours(hours, minutes, 0, 0);
-      
-      // If time has already passed today, schedule for tomorrow
       if (date.getTime() < Date.now()) {
         date.setDate(date.getDate() + 1);
       }
@@ -138,18 +149,28 @@ export default function App() {
     return null;
   };
 
-  // Add Reminder Action
+  // Add multiple reminders at once
+  const createRemindersBatch = (newItems) => {
+    setReminders(prev => {
+      const updated = [
+        ...prev,
+        ...newItems.map(item => ({
+          id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          title: item.title,
+          time: item.time,
+          completed: false,
+          notified: false,
+          createdAt: new Date().toISOString()
+        }))
+      ].sort((a, b) => new Date(a.time) - new Date(b.time));
+      localStorage.setItem('reminders', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Add single reminder
   const createReminder = (title, time) => {
-    const newRem = {
-      id: Date.now().toString(),
-      title,
-      time,
-      completed: false,
-      notified: false,
-      createdAt: new Date().toISOString()
-    };
-    const updated = [...reminders, newRem].sort((a, b) => new Date(a.time) - new Date(b.time));
-    saveReminders(updated);
+    createRemindersBatch([{ title, time }]);
   };
 
   // Send message handle
@@ -158,7 +179,8 @@ export default function App() {
     if (!input.trim()) return;
 
     const userMessage = { id: Date.now(), sender: 'user', text: input };
-    setMessages(prev => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    saveMessages(updatedMessages);
     const currentInput = input;
     setInput('');
 
@@ -167,7 +189,6 @@ export default function App() {
     setMessages(prev => [...prev, { id: botLoaderId, sender: 'assistant', text: "Analyzing your request..." }]);
 
     try {
-      // 1. Try real backend AI API first
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -179,20 +200,20 @@ export default function App() {
 
       if (response.ok) {
         const data = await response.json();
-        setMessages(prev => prev.filter(m => m.id !== botLoaderId).concat({
+        const finalMessages = updatedMessages.concat({
           id: Date.now(),
           sender: 'assistant',
           text: data.text
-        }));
+        });
+        saveMessages(finalMessages);
 
-        if (data.reminder) {
-          createReminder(data.reminder.title, data.reminder.time);
+        if (data.reminders && Array.isArray(data.reminders) && data.reminders.length > 0) {
+          createRemindersBatch(data.reminders);
         }
       } else {
-        throw new Error('API server unavailable, switching to local assistant');
+        throw new Error('API server unavailable');
       }
     } catch (err) {
-      // 2. Local Fallback Mode
       setTimeout(() => {
         const parsed = parseLocalReminder(currentInput);
         let botText = "I parsed your message, but couldn't detect a specific time. Try saying: 'Remind me to drink water in 10 minutes'.";
@@ -202,11 +223,12 @@ export default function App() {
           botText = `Got it! I scheduled a reminder: "${parsed.title}" for ${new Date(parsed.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
         }
 
-        setMessages(prev => prev.filter(m => m.id !== botLoaderId).concat({
+        const finalMessages = updatedMessages.concat({
           id: Date.now(),
           sender: 'assistant',
           text: botText
-        }));
+        });
+        saveMessages(finalMessages);
       }, 800);
     }
   };
@@ -253,14 +275,23 @@ export default function App() {
       <main className="app-container">
         {/* Left Side: Conversational Chat */}
         <section className="glass-panel chat-section">
-          <div className="chat-header">
-            <Bot size={20} color="#6366f1" />
-            <div>
-              <h3>AI Assistant</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#9ca3af' }}>
-                <span className="status-dot"></span> Online
+          <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Bot size={20} color="#6366f1" />
+              <div>
+                <h3>AI Assistant</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#9ca3af' }}>
+                  <span className="status-dot"></span> Online
+                </div>
               </div>
             </div>
+            <button 
+              className="settings-trigger" 
+              style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+              onClick={clearChatHistory}
+            >
+              Clear Chat
+            </button>
           </div>
 
           <div className="chat-history">

@@ -26,19 +26,23 @@ export async function onRequest(context) {
       });
     }
 
-    const systemPrompt = `You are a conversational reminder assistant. Your goal is to talk to the user and schedule reminders.
-Identify if the user wants to schedule a reminder, what the reminder is, and when it should happen (date and time in ISO 8601 format).
-The current local time is ${new Date().toISOString()}.
+    const systemPrompt = `You are an intelligent, conversational reminder assistant.
+    1. Correct any grammar mistakes or slang in the user's input before extracting reminders.
+    2. If the user mentions a project or goal (e.g., "Tomorrow I have a presentation"), break it down into logical steps (e.g., "Prepare presentation slides", "Rehearse presentation", "Attend presentation") and schedule them at appropriate times.
+    3. The current local time is ${new Date().toISOString()}. Use this to calculate correct date-times.
+    4. Support scheduling reminders for any future date/time.
 
-Always respond with a valid JSON object matching this structure:
-{
-  "text": "Your conversational response here confirming the reminder or asking for more details.",
-  "reminder": {
-    "title": "Title of the reminder",
-    "time": "ISO 8601 string of when to trigger"
-  }
-}
-If no reminder is scheduled or you need clarification, set the "reminder" field to null.`;
+    Always respond in valid JSON format:
+    {
+      "text": "Your conversational reply confirming the schedule or asking for details.",
+      "reminders": [
+        {
+          "title": "Clean, grammatically correct title of reminder",
+          "time": "ISO 8601 string of when to trigger"
+        }
+      ]
+    }
+    If no reminders should be created, set the "reminders" field to an empty array [].`;
 
     const apiURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
