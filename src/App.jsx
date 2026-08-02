@@ -194,22 +194,8 @@ export default function App() {
       throw new Error('API_404: All Gemini model endpoints failed. Please check your API key in Config.');
     }
 
-    // Rate limit — auto retry with live countdown ticker
+    // On rate limit (429), throw immediately so local assistant can respond in 0ms
     if (res.status === 429) {
-      if (retryCount < 2) {
-        const waitSec = (retryCount + 1) * 15;
-        for (let s = waitSec; s > 0; s--) {
-          setMessages(prev => {
-            const msg = `⏳ Google AI rate limit reached (15 req/min). Retrying automatically in ${s}s…`;
-            const hasRetry = prev.some(m => m.isRetryMsg);
-            if (hasRetry) return prev.map(m => m.isRetryMsg ? { ...m, text: msg } : m);
-            return [...prev, { id: 'retry', role: 'assistant', text: msg, isRetryMsg: true }];
-          });
-          await sleep(1000);
-        }
-        setMessages(prev => prev.filter(m => !m.isRetryMsg));
-        return callGemini(userText, retryCount + 1);
-      }
       throw new Error('RATE_LIMIT');
     }
 
