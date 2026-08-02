@@ -236,30 +236,64 @@ export default function App() {
       };
     }
 
-    // 2. Smart Time & Date Parser
-    let title = text;
+    // Helper to sanitize title: removes prefixes, time phrases, and trailing prepositions
+    const sanitizeTitle = (str) => {
+      let t = str
+        .replace(/^(remind me to|remember to|schedule|i have an|i have a|i have)\s+/i, '')
+        .replace(/\b(\d{1,2}(?::\d{2})?\s*(?:pm|am))\b/gi, '')
+        .replace(/\b(\d{1,2}\s+\d{2})\b/gi, '')
+        .replace(/\b(in\s+\d+\s*(?:min|mins|minute|minutes|m|hour|hours|h|day|days|d)?)\b/gi, '')
+        .replace(/\b(tomorrow|tmrw|today|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi, '')
+        .trim();
+
+      // Remove trailing prepositions (e.g. "on", "at", "for", "in", "to", "by")
+      t = t.replace(/\s+\b(on|at|for|in|to|by)\b$/i, '').trim();
+
+      if (!t || t.length < 2) t = "Task";
+      return t.charAt(0).toUpperCase() + t.slice(1);
+    };
+
+    // 2. Ambiguous Inputs without Time (e.g. "i have an exam", "i have a presentation")
+    if (/^(i have an|i have a|i have)\s+[a-z\s]+$/i.test(text) && !/(today|tomorrow|tmrw|\d+|at|in|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(text)) {
+      const cleanEvent = sanitizeTitle(text);
+      return {
+        message: `Good luck with your ${cleanEvent.toLowerCase()}! 🗓️ What day and time is it scheduled for?`,
+        reminders: []
+      };
+    }
+
+    // 3. Conversational context replies (e.g., "not today tmr", "tomorrow at 9")
+    if (/^(not today|tmrw|tomorrow)\s*(at\s*\d+)?$/i.test(lower)) {
+      const tomorrowDate = new Date();
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      tomorrowDate.setHours(9, 0, 0, 0);
+      return {
+        message: `Got it! I will schedule your task for tomorrow at 9:00 AM.`,
+        reminders: [{ title: "Pending Task", time: tomorrowDate.toISOString() }]
+      };
+    }
+
+    // 4. Smart Time & Date Parser
     let date = new Date();
     let matched = false;
 
-    // Pattern: "drink water in 2 min" / "call dad in 10 minutes" / "test in 5m"
-    const inTimeMatch = lower.match(/(?:remind me to|remember to|schedule)?\s*(.+?)\s+in\s+(\d+)\s*(min|mins|minute|minutes|m|hour|hours|h|day|days|d)?/i);
+    // Pattern: "drink water in 2 min" / "call dad in 10 minutes"
+    const inTimeMatch = lower.match(/in\s+(\d+)\s*(min|mins|minute|minutes|m|hour|hours|h|day|days|d)?/i);
     if (inTimeMatch) {
-      title = inTimeMatch[1].replace(/^(remind me to|remember to|schedule)\s+/i, '');
-      const num = parseInt(inTimeMatch[2], 10);
-      const unit = (inTimeMatch[3] || 'm').toLowerCase();
+      const num = parseInt(inTimeMatch[1], 10);
+      const unit = (inTimeMatch[2] || 'm').toLowerCase();
       if (unit.startsWith('h')) date.setHours(date.getHours() + num);
       else if (unit.startsWith('d')) date.setDate(date.getDate() + num);
       else date.setMinutes(date.getMinutes() + num);
       matched = true;
     }
 
-    // Pattern: "call dad at 6pm" / "meeting at 3:30 pm"
-    const atTimeMatch = lower.match(/(?:remind me to|remember to|schedule)?\s*(.+?)\s+at\s+(\d+)(?::(\d+))?\s*(pm|am)/i);
+    // Pattern: "call dad at 6pm" / "bath at 3 45" / "meeting at 3:30 pm"
+    const atTimeMatch = lower.match(/at\s+(\d{1,2})(?::(\d{2})|\s+(\d{2}))?\s*(pm|am)?/i);
     if (atTimeMatch && !matched) {
-      title = atTimeMatch[1].replace(/^(remind me to|remember to|schedule)\s+/i, '');
-      let hours = parseInt(atTimeMatch[2], 10);
-      const minutes = atTimeMatch[3] ? parseInt(atTimeMatch[3], 10) : 0;
-      const ampm = atTimeMatch[4].toLowerCase();
+      let hours = parseInt(atTimeMatch[1], 10);
+      const minutes = parseInt(atTimeMatch[2] || atTimeMatch[3] || '0', 10);
+      const ampm = (atTimeMatch[4] || '').toLowerCase();
       if (ampm === 'pm' && hours < 12) hours += 12;
       if (ampm === 'am' && hours === 12) hours = 0;
       date.setHours(hours, minutes, 0, 0);
@@ -268,37 +302,46 @@ export default function App() {
     }
 
     // Pattern: "presentation tomorrow" / "exam monday"
-    const dayMatch = lower.match(/(?:remind me to|remember to|schedule)?\s*(.+?)\s+(tomorrow|tmrw|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
+    const dayMatch = lower.match(/(tomorrow|tmrw|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
     if (dayMatch && !matched) {
-      title = dayMatch[1].replace(/^(remind me to|remember to|schedule)\s+/i, '');
-      const dayWord = dayMatch[2].toLowerCase();
+      const dayWord = dayMatch[1].toLowerCase();
       if (dayWord === 'tomorrow' || dayWord === 'tmrw') {
         date.setDate(date.getDate() + 1);
-        date.setHours(9, 0, 0, 0);
+        if (!atTimeMatch) date.setHours(9, 0, 0, 0);
       } else {
         date.setDate(date.getDate() + 1);
       }
       matched = true;
     }
 
-    // Clean up title
-    title = title.replace(/^(to\s+)/i, '').trim();
-    if (!title) title = "Scheduled reminder";
-    title = title.charAt(0).toUpperCase() + title.slice(1);
+    // Direct Time Pattern: "9 30pm cn record"
+    const directTimeMatch = lower.match(/^(\d{1,2})(?::(\d{2})|\s+(\d{2}))?\s*(pm|am)\b/i);
+    if (directTimeMatch && !matched) {
+      let hours = parseInt(directTimeMatch[1], 10);
+      const minutes = parseInt(directTimeMatch[2] || directTimeMatch[3] || '0', 10);
+      const ampm = directTimeMatch[4].toLowerCase();
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+      date.setHours(hours, minutes, 0, 0);
+      if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 1);
+      matched = true;
+    }
+
+    const cleanTitle = sanitizeTitle(text);
 
     if (matched) {
       const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dayStr = date.toDateString() === new Date().toDateString() ? 'today' : 'tomorrow';
       return {
-        message: `Got it! Scheduled "${title}" for ${timeStr}.`,
-        reminders: [{ title, time: date.toISOString() }]
+        message: `Got it! Scheduled "${cleanTitle}" for ${dayStr} at ${timeStr}.`,
+        reminders: [{ title: cleanTitle, time: date.toISOString() }]
       };
     }
 
-    // Default fallback: schedule in 5 minutes
-    const fallbackDate = new Date(Date.now() + 5 * 60000);
+    // Default fallback: prompt user for time instead of assigning random time
     return {
-      message: `Got it! I've set a reminder for "${title}" in 5 minutes.`,
-      reminders: [{ title, time: fallbackDate.toISOString() }]
+      message: `Got it! What time would you like me to set the reminder for "${cleanTitle}"? (e.g. "at 6pm" or "in 10 minutes")`,
+      reminders: []
     };
   };
 
