@@ -1,34 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X } from 'lucide-react';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent';
 
-const SYSTEM_PROMPT = `You are RemindAI, a smart personal assistant that helps users manage their tasks and reminders through natural conversation.
-
-Current date and time: {{CURRENT_TIME}}
-
-Your behavior rules:
-1. UNDERSTAND natural language freely. The user may write casually, with typos, abbreviations, or grammatical mistakes. Always interpret what they mean, never reject or ask them to reformat.
-2. If the user mentions a goal or event (e.g., "I have a presentation tomorrow"), do NOT immediately create reminders. Instead, ask 1-2 short, friendly follow-up questions to understand the full context (e.g., "What time is the presentation?" or "Would you like me to schedule preparation steps for today?").
-3. Once you have enough information, break goals into logical sub-tasks with sensible scheduled times across multiple days if needed.
-4. Support reminders for any future date and time — today, tomorrow, next week, specific dates, etc.
-5. Correct any typos or grammar in the task titles silently before saving them.
-6. Be warm, brief, and conversational. Don't over-explain.
-
-Response format — always return valid JSON:
-{
-  "message": "Your friendly conversational reply here",
-  "reminders": [
-    { "title": "Clean task title", "time": "ISO 8601 datetime string" }
-  ],
-  "needs_more_info": true or false
-}
+const SYSTEM_PROMPT = `You are RemindAI, a reminder assistant. Today is {{CURRENT_TIME}}.
 
 Rules:
-- Set "reminders" to [] if you need more info or if no reminders should be created yet.
-- Set "needs_more_info" to true when you asked a follow-up question.
-- Set "needs_more_info" to false when reminders are being created or the reply is informational.
-- Always use ISO 8601 format for times, calculated from the current date/time provided above.`;
+- Accept ANY natural language, fix typos silently.
+- If the user mentions a goal/event without enough details (time, date), ask ONE short follow-up question.
+- Once you have enough info, break big tasks into sub-reminders across days.
+- Support any future date/time for reminders.
+- Keep replies short and friendly.
+
+Always reply with ONLY this JSON (no markdown, no code fences):
+{"message":"reply","reminders":[{"title":"task title","time":"ISO8601"}]}
+If no reminders yet, use: {"message":"reply","reminders":[]}`;
+
 
 export default function App() {
   const [messages, setMessages] = useState([]);
@@ -156,38 +143,43 @@ export default function App() {
 
   const callGemini = async (userText, retryCount = 0) => {
     const now = new Date();
-    const prompt = SYSTEM_PROMPT.replace('{{CURRENT_TIME}}', now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true, dateStyle: 'full', timeStyle: 'short' }));
+    const timeStr = now.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', hour12: true,
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    const prompt = SYSTEM_PROMPT.replace('{{CURRENT_TIME}}', timeStr);
 
-    const history = [
-      { role: 'user', parts: [{ text: prompt }] },
-      { role: 'model', parts: [{ text: '{"message": "Got it! I\'m ready to help.", "reminders": [], "needs_more_info": false}' }] },
-      ...conversationHistory,
-      { role: 'user', parts: [{ text: userText }] }
+    // Only keep last 6 messages to minimise token usage
+    const recentHistory = conversationHistory.slice(-6);
+
+    const contents = [
+      { role: 'user',  parts: [{ text: prompt }] },
+      { role: 'model', parts: [{ text: '{"message":"Ready!","reminders":[]}' }] },
+      ...recentHistory,
+      { role: 'user',  parts: [{ text: userText }] }
     ];
 
     const res = await fetch(`${GEMINI_API_URL}?key=${geminiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: history,
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
+        contents,
+        generationConfig: { temperature: 0.6, maxOutputTokens: 512 }
       })
     });
 
-    // Handle rate limit — wait and retry up to 2 times
+    // Rate limit — auto retry
     if (res.status === 429) {
       if (retryCount < 2) {
-        const waitSec = (retryCount + 1) * 15;
+        const waitSec = (retryCount + 1) * 20;
         setMessages(prev => {
-          const last = prev[prev.length - 1];
-          const msg = `⏳ Rate limit reached (free tier: 15 requests/min). Retrying in ${waitSec}s…`;
-          if (last?.role === 'assistant' && last?.isRetryMsg) {
-            return prev.map(m => m.isRetryMsg ? { ...m, text: msg } : m);
-          }
-          return [...prev, { id: Date.now(), role: 'assistant', text: msg, isRetryMsg: true }];
+          const msg = `⏳ Rate limit reached. Retrying in ${waitSec}s…`;
+          const hasRetry = prev.some(m => m.isRetryMsg);
+          if (hasRetry) return prev.map(m => m.isRetryMsg ? { ...m, text: msg } : m);
+          return [...prev, { id: 'retry', role: 'assistant', text: msg, isRetryMsg: true }];
         });
         await sleep(waitSec * 1000);
-        // Remove retry message
         setMessages(prev => prev.filter(m => !m.isRetryMsg));
         return callGemini(userText, retryCount + 1);
       }
@@ -195,12 +187,22 @@ export default function App() {
     }
 
     if (res.status === 400) throw new Error('INVALID_KEY');
-    if (!res.ok) throw new Error(`API_ERROR_${res.status}`);
+    if (!res.ok) throw new Error(`API_${res.status}`);
 
     const data = await res.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!raw) throw new Error('EMPTY_RESPONSE');
-    return JSON.parse(raw);
+
+    // Strip markdown code fences if model wraps in them
+    const clean = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+    try {
+      return JSON.parse(clean);
+    } catch {
+      // Fallback: extract JSON object from response
+      const match = clean.match(/\{[\s\S]*\}/);
+      if (match) return JSON.parse(match[0]);
+      throw new Error('PARSE_ERROR');
+    }
   };
 
   const handleSend = async (e) => {
