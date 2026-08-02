@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff } from 'lucide-react';
+import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus } from 'lucide-react';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
@@ -29,6 +29,12 @@ export default function App() {
   const [geminiKey, setGeminiKey] = useState('');
   const [tempKey, setTempKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Manual Add State
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualDate, setManualDate] = useState('');
+  const [manualTime, setManualTime] = useState('');
 
   // Sound Settings State
   const [isMuted, setIsMuted] = useState(false);
@@ -104,6 +110,36 @@ export default function App() {
       setIsListening(false);
       shouldKeepListeningRef.current = false;
     }
+  };
+
+  // Manual Add Handlers
+  const openManualAddModal = () => {
+    const now = new Date();
+    const plus10 = new Date(now.getTime() + 10 * 60000);
+
+    const dateStr = plus10.toISOString().split('T')[0];
+    const hours = String(plus10.getHours()).padStart(2, '0');
+    const mins = String(plus10.getMinutes()).padStart(2, '0');
+    const timeStr = `${hours}:${mins}`;
+
+    setManualTitle('');
+    setManualDate(dateStr);
+    setManualTime(timeStr);
+    setShowManualAdd(true);
+  };
+
+  const handleSaveManualReminder = (e) => {
+    e.preventDefault();
+    if (!manualTitle.trim()) return;
+
+    const [year, month, day] = manualDate.split('-').map(Number);
+    const [hours, minutes] = manualTime.split(':').map(Number);
+
+    const targetDate = new Date(year, month - 1, day, hours, minutes, 0);
+    const titleFormatted = manualTitle.trim().charAt(0).toUpperCase() + manualTitle.trim().slice(1);
+
+    addReminders([{ title: titleFormatted, time: targetDate.toISOString() }]);
+    setShowManualAdd(false);
   };
 
   const chatEndRef = useRef(null);
@@ -708,9 +744,19 @@ export default function App() {
         <div className="dashboard">
           {/* Active reminders */}
           <div className="glass reminder-section">
-            <div className="section-header">
-              <Calendar size={16} color="#818cf8" />
-              <span>Upcoming ({activeReminders.length})</span>
+            <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={16} color="#818cf8" />
+                <span>Upcoming ({activeReminders.length})</span>
+              </div>
+              <button
+                className="icon-btn"
+                style={{ width: '28px', height: '28px' }}
+                onClick={openManualAddModal}
+                title="Add Reminder Manually"
+              >
+                <Plus size={16} />
+              </button>
             </div>
             <div className="reminder-list">
               {activeReminders.length === 0 ? (
@@ -886,6 +932,59 @@ export default function App() {
                 setShowSettings(false);
               }}>Save Settings</button>
             </div>
+      {/* Manual Add Reminder Modal */}
+      {showManualAdd && (
+        <div className="modal-overlay" onClick={() => setShowManualAdd(false)}>
+          <div className="modal glass" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Add New Reminder</h3>
+              <button className="icon-btn" onClick={() => setShowManualAdd(false)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSaveManualReminder}>
+              <div style={{ marginBottom: '16px' }}>
+                <label className="modal-label">Reminder Title</label>
+                <input
+                  type="text"
+                  className="modal-input"
+                  placeholder="e.g. Call Mom, Water plants, Meeting…"
+                  value={manualTitle}
+                  onChange={e => setManualTitle(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div>
+                  <label className="modal-label">Date</label>
+                  <input
+                    type="date"
+                    className="modal-input"
+                    value={manualDate}
+                    onChange={e => setManualDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="modal-label">Time</label>
+                  <input
+                    type="time"
+                    className="modal-input"
+                    value={manualTime}
+                    onChange={e => setManualTime(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-ghost" onClick={() => setShowManualAdd(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={!manualTitle.trim()}>
+                  Add Reminder
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
