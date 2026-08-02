@@ -236,10 +236,10 @@ export default function App() {
       };
     }
 
-    // Helper to sanitize title: removes prefixes, time phrases, and trailing prepositions
+    // Helper to sanitize title: removes prefixes anywhere in text, time phrases, and trailing prepositions
     const sanitizeTitle = (str) => {
       let t = str
-        .replace(/^(remind me to|remember to|schedule|i have an|i have a|i have)\s+/i, '')
+        .replace(/(?:remind me to|remember to|schedule|i have an|i have a|i have)\s+/gi, '')
         .replace(/\b(\d{1,2}(?::\d{2})?\s*(?:pm|am))\b/gi, '')
         .replace(/\b(\d{1,2}\s+\d{2})\b/gi, '')
         .replace(/\b(in\s+\d+\s*(?:min|mins|minute|minutes|m|hour|hours|h|day|days|d)?)\b/gi, '')
@@ -248,12 +248,37 @@ export default function App() {
 
       // Remove trailing prepositions (e.g. "on", "at", "for", "in", "to", "by")
       t = t.replace(/\s+\b(on|at|for|in|to|by)\b$/i, '').trim();
+      t = t.replace(/^(to\s+)/i, '').trim();
 
       if (!t || t.length < 2) t = "Task";
       return t.charAt(0).toUpperCase() + t.slice(1);
     };
 
-    // 2. Ambiguous Inputs without Time (e.g. "i have an exam", "i have a presentation")
+    // Smart AM/PM calculation
+    const calculateTargetTime = (h, m, ampm, isToday) => {
+      const now = new Date();
+      let target = new Date();
+      let hours = h;
+
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      else if (ampm === 'am' && hours === 12) hours = 0;
+      else if (!ampm) {
+        // If current time is afternoon (>= 12), and specified hours < 12, assume PM!
+        if (now.getHours() >= 12 && hours < 12) {
+          hours += 12;
+        }
+      }
+
+      target.setHours(hours, m, 0, 0);
+
+      // If not explicitly "today" and time has passed, roll over to tomorrow
+      if (!isToday && target.getTime() <= now.getTime()) {
+        target.setDate(target.getDate() + 1);
+      }
+      return target;
+    };
+
+    // 2. Ambiguous Inputs without Time
     if (/^(i have an|i have a|i have)\s+[a-z\s]+$/i.test(text) && !/(today|tomorrow|tmrw|\d+|at|in|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(text)) {
       const cleanEvent = sanitizeTitle(text);
       return {
@@ -262,22 +287,12 @@ export default function App() {
       };
     }
 
-    // 3. Conversational context replies (e.g., "not today tmr", "tomorrow at 9")
-    if (/^(not today|tmrw|tomorrow)\s*(at\s*\d+)?$/i.test(lower)) {
-      const tomorrowDate = new Date();
-      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-      tomorrowDate.setHours(9, 0, 0, 0);
-      return {
-        message: `Got it! I will schedule your task for tomorrow at 9:00 AM.`,
-        reminders: [{ title: "Pending Task", time: tomorrowDate.toISOString() }]
-      };
-    }
-
-    // 4. Smart Time & Date Parser
+    // 3. Smart Time & Date Parser
     let date = new Date();
     let matched = false;
+    const hasToday = /\btoday\b/i.test(lower);
 
-    // Pattern: "drink water in 2 min" / "call dad in 10 minutes"
+    // Pattern A: "in 15 min remind me to bath" / "drink water in 2 min"
     const inTimeMatch = lower.match(/in\s+(\d+)\s*(min|mins|minute|minutes|m|hour|hours|h|day|days|d)?/i);
     if (inTimeMatch) {
       const num = parseInt(inTimeMatch[1], 10);
@@ -288,20 +303,17 @@ export default function App() {
       matched = true;
     }
 
-    // Pattern: "call dad at 6pm" / "bath at 3 45" / "meeting at 3:30 pm"
-    const atTimeMatch = lower.match(/at\s+(\d{1,2})(?::(\d{2})|\s+(\d{2}))?\s*(pm|am)?/i);
+    // Pattern B: "bath at 3 45" / "bath today 3 45" / "call dad at 6pm"
+    const atTimeMatch = lower.match(/(?:at\s+)?(\d{1,2})(?::(\d{2})|\s+(\d{2}))\s*(pm|am)?/i);
     if (atTimeMatch && !matched) {
-      let hours = parseInt(atTimeMatch[1], 10);
+      const hours = parseInt(atTimeMatch[1], 10);
       const minutes = parseInt(atTimeMatch[2] || atTimeMatch[3] || '0', 10);
       const ampm = (atTimeMatch[4] || '').toLowerCase();
-      if (ampm === 'pm' && hours < 12) hours += 12;
-      if (ampm === 'am' && hours === 12) hours = 0;
-      date.setHours(hours, minutes, 0, 0);
-      if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 1);
+      date = calculateTargetTime(hours, minutes, ampm, hasToday);
       matched = true;
     }
 
-    // Pattern: "presentation tomorrow" / "exam monday"
+    // Pattern C: "presentation tomorrow" / "exam monday"
     const dayMatch = lower.match(/(tomorrow|tmrw|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
     if (dayMatch && !matched) {
       const dayWord = dayMatch[1].toLowerCase();
@@ -311,19 +323,6 @@ export default function App() {
       } else {
         date.setDate(date.getDate() + 1);
       }
-      matched = true;
-    }
-
-    // Direct Time Pattern: "9 30pm cn record"
-    const directTimeMatch = lower.match(/^(\d{1,2})(?::(\d{2})|\s+(\d{2}))?\s*(pm|am)\b/i);
-    if (directTimeMatch && !matched) {
-      let hours = parseInt(directTimeMatch[1], 10);
-      const minutes = parseInt(directTimeMatch[2] || directTimeMatch[3] || '0', 10);
-      const ampm = directTimeMatch[4].toLowerCase();
-      if (ampm === 'pm' && hours < 12) hours += 12;
-      if (ampm === 'am' && hours === 12) hours = 0;
-      date.setHours(hours, minutes, 0, 0);
-      if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 1);
       matched = true;
     }
 
@@ -338,7 +337,7 @@ export default function App() {
       };
     }
 
-    // Default fallback: prompt user for time instead of assigning random time
+    // Fallback: prompt for time
     return {
       message: `Got it! What time would you like me to set the reminder for "${cleanTitle}"? (e.g. "at 6pm" or "in 10 minutes")`,
       reminders: []
