@@ -100,6 +100,8 @@ export default function App() {
         vibrate: [300, 100, 300, 100, 300],
         requireInteraction: true,
         renotify: true,
+        silent: false,
+        timestamp: Date.now(),
         tag: `rem_${Date.now()}`
       };
 
