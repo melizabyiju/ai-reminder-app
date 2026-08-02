@@ -142,40 +142,17 @@ export default function App() {
 
   const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
-  const getWorkingModelUrl = async (apiKey) => {
-    const cachedModel = localStorage.getItem('gemini_model_name');
-    if (cachedModel) {
-      return `https://generativelanguage.googleapis.com/v1beta/${cachedModel}:generateContent?key=${apiKey}`;
-    }
-
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      if (res.ok) {
-        const data = await res.json();
-        const availableModels = data.models || [];
-        
-        // Find a flash model supporting generateContent
-        const chosen = availableModels.find(m => 
-          m.supportedGenerationMethods?.includes('generateContent') && 
-          m.name.includes('flash')
-        ) || availableModels.find(m => 
-          m.supportedGenerationMethods?.includes('generateContent')
-        );
-
-        if (chosen) {
-          const modelPath = chosen.name; // e.g. "models/gemini-1.5-flash"
-          localStorage.setItem('gemini_model_name', modelPath);
-          return `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${apiKey}`;
-        }
-      }
-    } catch (e) {
-      console.warn('Model list discovery failed:', e);
-    }
-
-    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
-  };
+  const MODEL_CANDIDATES = [
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent'
+  ];
 
   const callGemini = async (userText, retryCount = 0) => {
+    localStorage.removeItem('gemini_model_name');
+
     const now = new Date();
     const timeStr = now.toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata', hour12: true,
@@ -192,15 +169,30 @@ export default function App() {
       { role: 'user',  parts: [{ text: userText }] }
     ];
 
-    const targetUrl = await getWorkingModelUrl(geminiKey);
-    let res = await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        generationConfig: { temperature: 0.6, maxOutputTokens: 512 }
-      })
-    });
+    let res = null;
+
+    // Try candidate endpoints sequentially until one does not 404
+    for (const baseUrl of MODEL_CANDIDATES) {
+      try {
+        const response = await fetch(`${baseUrl}?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            generationConfig: { temperature: 0.6, maxOutputTokens: 512 }
+          })
+        });
+
+        if (response.status !== 404) {
+          res = response;
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (!res) {
+      throw new Error('API_404: All Gemini model endpoints failed. Please check your API key in Config.');
+    }
 
     // Rate limit — auto retry
     if (res.status === 429) {
