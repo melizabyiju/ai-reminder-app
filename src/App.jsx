@@ -932,6 +932,9 @@ export default function App() {
                 setShowSettings(false);
               }}>Save Settings</button>
             </div>
+          </div>
+        </div>
+      )}
       {/* Manual Add Reminder Modal */}
       {showManualAdd && (
         <div className="modal-overlay" onClick={() => setShowManualAdd(false)}>
