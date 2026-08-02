@@ -25,6 +25,39 @@ export default function App() {
     }
   }, []);
 
+  // Periodic scanner to check for due reminders (robust, survives reloads)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      let updatedAny = false;
+      const updatedReminders = reminders.map(r => {
+        // If reminder is not completed, not already notified, and time has passed
+        if (!r.completed && !r.notified && new Date(r.time) <= now) {
+          // Play alarm sound
+          new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-120.wav').play().catch(() => {});
+          
+          // Trigger notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Task Due!', {
+              body: r.title,
+              requireInteraction: true
+            });
+          }
+          
+          updatedAny = true;
+          return { ...r, notified: true };
+        }
+        return r;
+      });
+
+      if (updatedAny) {
+        saveReminders(updatedReminders);
+      }
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [reminders]);
+
   // Save reminders to localStorage
   const saveReminders = (newReminders) => {
     setReminders(newReminders);
@@ -112,21 +145,11 @@ export default function App() {
       title,
       time,
       completed: false,
+      notified: false,
       createdAt: new Date().toISOString()
     };
     const updated = [...reminders, newRem].sort((a, b) => new Date(a.time) - new Date(b.time));
     saveReminders(updated);
-
-    // Schedule local audio alarm fallback if push notification is pending
-    const delay = new Date(time).getTime() - Date.now();
-    if (delay > 0) {
-      setTimeout(() => {
-        new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-120.wav').play().catch(() => {});
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Reminder!', { body: title });
-        }
-      }, delay);
-    }
   };
 
   // Send message handle
