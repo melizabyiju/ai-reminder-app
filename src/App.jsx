@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X } from 'lucide-react';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
 const SYSTEM_PROMPT = `You are RemindAI, a reminder assistant. Today is {{CURRENT_TIME}}.
 
@@ -160,7 +161,8 @@ export default function App() {
       { role: 'user',  parts: [{ text: userText }] }
     ];
 
-    const res = await fetch(`${GEMINI_API_URL}?key=${geminiKey}`, {
+    let targetUrl = `${GEMINI_API_URL}?key=${geminiKey}`;
+    let res = await fetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -168,6 +170,19 @@ export default function App() {
         generationConfig: { temperature: 0.6, maxOutputTokens: 512 }
       })
     });
+
+    // If 404 (model not found on v1), attempt fallback URL with -latest tag
+    if (res.status === 404) {
+      targetUrl = `${GEMINI_FALLBACK_URL}?key=${geminiKey}`;
+      res = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          generationConfig: { temperature: 0.6, maxOutputTokens: 512 }
+        })
+      });
+    }
 
     // Rate limit — auto retry
     if (res.status === 429) {
