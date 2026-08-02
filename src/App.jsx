@@ -39,10 +39,12 @@ export default function App() {
   // Voice Input State
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
+  const shouldKeepListeningRef = useRef(false);
 
   const toggleVoiceInput = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
+      shouldKeepListeningRef.current = false;
+      try { recognitionRef.current?.stop(); } catch (e) {}
       setIsListening(false);
       return;
     }
@@ -54,30 +56,49 @@ export default function App() {
     }
 
     try {
+      shouldKeepListeningRef.current = true;
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onstart = () => setIsListening(true);
       recognition.onresult = (event) => {
         let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
         setInput(transcript);
       };
       recognition.onerror = (event) => {
         console.warn('Speech recognition error:', event.error);
-        setIsListening(false);
+        if (event.error === 'no-speech' && shouldKeepListeningRef.current) {
+          return;
+        }
+        if (event.error !== 'aborted' && event.error !== 'no-speech') {
+          setIsListening(false);
+          shouldKeepListeningRef.current = false;
+        }
       };
-      recognition.onend = () => setIsListening(false);
+      recognition.onend = () => {
+        if (shouldKeepListeningRef.current) {
+          try {
+            recognition.start();
+          } catch (e) {
+            setIsListening(false);
+            shouldKeepListeningRef.current = false;
+          }
+        } else {
+          setIsListening(false);
+        }
+      };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch (e) {
       console.warn('Speech recognition init failed:', e);
       setIsListening(false);
+      shouldKeepListeningRef.current = false;
     }
   };
 
