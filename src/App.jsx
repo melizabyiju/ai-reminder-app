@@ -121,23 +121,38 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Audio Playback Synth / Audio File Player
-  const playAlarmSound = (overridePreset = null, overrideCustomUrl = null) => {
+  // Audio Playback Synth / Audio File Player / Text-to-Speech
+  const playAlarmSound = (overridePreset = null, overrideCustomUrl = null, overrideTitle = null) => {
     if (isMuted && !overridePreset) return;
 
     const preset = overridePreset || soundPreset;
     const customUrl = overrideCustomUrl || customSoundUrl;
 
+    // 1. Text-to-Speech Voice Announcement
+    if (preset === 'speech') {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const textToSpeak = overrideTitle ? `Reminder: ${overrideTitle}` : 'Reminder: Bath';
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+      return;
+    }
+
+    // 2. Custom Uploaded Audio File
     if (preset === 'custom' && customUrl) {
       const audio = new Audio(customUrl);
       audio.play().catch(e => console.warn('Custom audio playback failed:', e));
       return;
     }
 
+    // 3. Web Audio Synth Presets (sine, chime, marimba)
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       if (preset === 'chime') {
-        // Soft double-chime (E5 -> A5)
         [659.25, 880].forEach((freq, i) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
@@ -151,7 +166,6 @@ export default function App() {
           osc.stop(ctx.currentTime + i * 0.25 + 0.8);
         });
       } else if (preset === 'marimba') {
-        // Marimba 3-note melody (C5 -> E5 -> G5)
         [523.25, 659.25, 783.99].forEach((freq, i) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
@@ -165,7 +179,6 @@ export default function App() {
           osc.stop(ctx.currentTime + i * 0.15 + 0.5);
         });
       } else {
-        // Default Beep
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
@@ -223,7 +236,7 @@ export default function App() {
 
   const triggerAlert = (title) => {
     // Sound & Haptics
-    playAlarmSound();
+    playAlarmSound(null, null, title);
 
     // Android & Desktop System Notification Shade
     if ('Notification' in window && Notification.permission === 'granted') {
@@ -799,6 +812,7 @@ export default function App() {
                       style={{ flex: 1 }}
                     >
                       <option value="sine">🔔 Default Beep</option>
+                      <option value="speech">🗣️ Read Title Aloud (Voice Announcement)</option>
                       <option value="chime">✨ Gentle Chime</option>
                       <option value="marimba">🎵 Marimba Melody</option>
                       <option value="custom">📁 Custom Audio File</option>
