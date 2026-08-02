@@ -40,6 +40,7 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
   const shouldKeepListeningRef = useRef(false);
+  const baseTextRef = useRef('');
 
   const toggleVoiceInput = () => {
     if (isListening) {
@@ -57,6 +58,8 @@ export default function App() {
 
     try {
       shouldKeepListeningRef.current = true;
+      baseTextRef.current = input; // Capture existing text in textbox
+
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -68,7 +71,8 @@ export default function App() {
         for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        setInput(transcript);
+        const base = baseTextRef.current.trim();
+        setInput(base ? `${base} ${transcript}` : transcript);
       };
       recognition.onerror = (event) => {
         console.warn('Speech recognition error:', event.error);
