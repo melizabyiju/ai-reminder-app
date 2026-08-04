@@ -738,20 +738,24 @@ export default function App() {
       {/* Header */}
       <header className="app-header">
         <div className="brand">
-          <Sparkles size={20} color="#a78bfa" />
+          <div className="brand-logo-icon">
+            <Sparkles size={18} color="#ffffff" />
+          </div>
           <span className="brand-name">RemindAI</span>
+          <span className="brand-badge">PRO AI</span>
         </div>
         <div className="header-actions">
           <button
             className={`notif-btn ${notifStatus === 'granted' ? 'active' : ''}`}
             onClick={requestNotifications}
           >
+            <span className="status-dot"></span>
             {notifStatus === 'granted'
-              ? <><Bell size={16} /> Alerts On</>
-              : <><BellOff size={16} /> Enable Alerts</>
+              ? <><Bell size={15} /> Alerts On</>
+              : <><BellOff size={15} /> Enable Alerts</>
             }
           </button>
-          <button className="icon-btn" onClick={() => { setShowSettings(true); setTempKey(geminiKey); }}>
+          <button className="icon-btn" onClick={() => { setShowSettings(true); setTempKey(geminiKey); }} title="Settings">
             <Settings size={18} />
           </button>
         </div>
@@ -766,7 +770,7 @@ export default function App() {
             {messages.map(msg => (
               <div key={msg.id} className={`bubble-wrap ${msg.role}`}>
                 {msg.role === 'assistant' && (
-                  <div className="avatar"><Bot size={14} /></div>
+                  <div className="avatar"><Bot size={16} /></div>
                 )}
                 <div className={`bubble ${msg.role}`}>
                   <span dangerouslySetInnerHTML={{
@@ -781,7 +785,7 @@ export default function App() {
 
             {isLoading && (
               <div className="bubble-wrap assistant">
-                <div className="avatar"><Bot size={14} /></div>
+                <div className="avatar"><Bot size={16} /></div>
                 <div className="bubble assistant typing">
                   <span className="dot" /><span className="dot" /><span className="dot" />
                 </div>
@@ -797,7 +801,7 @@ export default function App() {
               onClick={toggleVoiceInput}
               title={isListening ? "Listening... Click to stop" : "Speak your reminder"}
             >
-              {isListening ? <MicOff size={18} color="#f87171" /> : <Mic size={18} />}
+              {isListening ? <MicOff size={18} color="#f43f5e" /> : <Mic size={18} />}
             </button>
             <textarea
               className="chat-input"
@@ -815,11 +819,27 @@ export default function App() {
 
         {/* Right: Dashboard */}
         <div className="dashboard">
+          {/* Stats Bar */}
+          <div className="dashboard-stats">
+            <div className="stat-chip active">
+              <span className="stat-count">{activeReminders.length}</span>
+              <span className="stat-label">Upcoming</span>
+            </div>
+            <div className={`stat-chip ${activeReminders.filter(r => isOverdue(r.time)).length > 0 ? 'overdue' : ''}`}>
+              <span className="stat-count">{activeReminders.filter(r => isOverdue(r.time)).length}</span>
+              <span className="stat-label">Overdue</span>
+            </div>
+            <div className="stat-chip completed">
+              <span className="stat-count">{completedReminders.length}</span>
+              <span className="stat-label">Done</span>
+            </div>
+          </div>
+
           {/* Active reminders */}
           <div className="glass reminder-section">
             <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={16} color="#818cf8" />
+                <Calendar size={16} color="#a855f7" />
                 <span>Upcoming ({activeReminders.length})</span>
               </div>
               <button
