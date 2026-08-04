@@ -805,16 +805,18 @@ body {
 
   .main-layout {
     grid-template-columns: 1fr;
-    padding: 10px;
+    padding: 10px 10px 0 10px;
     gap: 0;
     overflow: hidden;
-    height: calc(100dvh - 65px);
+    height: calc(100dvh - 60px);
   }
 
   /* Chat fills 100% of mobile screen height continuously */
   .chat-panel {
     height: 100%;
     border-radius: var(--radius-sm);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -827,8 +829,14 @@ body {
 
   .bubble { max-width: 88%; font-size: 0.91rem; padding: 11px 15px; }
   .chat-messages { padding: 14px 12px; gap: 12px; }
-  .chat-input-row { padding: 10px 12px; gap: 8px; }
-  .chat-input { font-size: 0.91rem; padding: 11px 14px; }
+
+  /* Raised chat input box on mobile */
+  .chat-input-row {
+    padding: 12px 14px max(24px, env(safe-area-inset-bottom, 24px)) 14px;
+    gap: 10px;
+    background: var(--chat-input-bg);
+  }
+  .chat-input { font-size: 0.92rem; padding: 11px 14px; }
 
   .mic-btn, .send-btn {
     width: 44px;
@@ -863,21 +871,18 @@ body {
   .notif-btn { padding: 8px 12px; }
   .brand-name { font-size: 1.05rem; }
 
-  .main-layout { padding: 8px; }
+  .main-layout { padding: 6px 6px 0 6px; }
   .chat-messages { padding: 12px 10px; gap: 10px; }
-  .chat-input-row { padding: 8px 10px; gap: 6px; }
+  .chat-input-row { padding: 10px 12px max(24px, env(safe-area-inset-bottom, 24px)) 12px; gap: 8px; }
   .bubble { max-width: 92%; font-size: 0.88rem; }
 }
 
-/* Safe area insets (notch phones) */
+/* Safe area insets (notch & gesture bar phones) */
 @supports (padding-top: env(safe-area-inset-top)) {
   .app-header {
     padding-top: max(12px, env(safe-area-inset-top));
     padding-left: max(16px, env(safe-area-inset-left));
     padding-right: max(16px, env(safe-area-inset-right));
-  }
-  .chat-input-row {
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 }
 
