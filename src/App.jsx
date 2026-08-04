@@ -962,7 +962,7 @@ export default function App() {
         </div>
 
         {/* Right: Dashboard */}
-        <div className={`dashboard ${activeTab === 'dashboard' ? 'mobile-show' : 'mobile-hide'}`}>
+        <div className="dashboard">
           {/* Stats Bar */}
           <div className="dashboard-stats">
             <div className="stat-chip active">
