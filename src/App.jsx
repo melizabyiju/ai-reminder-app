@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus } from 'lucide-react';
+import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus, Sun, Moon } from 'lucide-react';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
@@ -41,6 +41,15 @@ export default function App() {
   const [tempKey, setTempKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Theme Toggle State
+  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('app_theme', nextTheme);
+  };
+
   // Manual Add State
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualTitle, setManualTitle] = useState('');
@@ -52,6 +61,12 @@ export default function App() {
   const [soundPreset, setSoundPreset] = useState('sine'); // 'sine', 'chime', 'marimba', 'custom'
   const [customSoundUrl, setCustomSoundUrl] = useState('');
   const [customFileName, setCustomFileName] = useState('');
+
+  const toggleMute = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    localStorage.setItem('alarm_muted', nextMuted.toString());
+  };
 
   // Voice Input State
   const [isListening, setIsListening] = useState(false);
@@ -734,7 +749,7 @@ export default function App() {
   const isOverdue = (iso) => new Date(iso) < new Date();
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       {/* Header */}
       <header className="app-header">
         <div className="brand">
@@ -754,6 +769,20 @@ export default function App() {
               ? <><Bell size={15} /> Alerts On</>
               : <><BellOff size={15} /> Enable Alerts</>
             }
+          </button>
+          <button
+            className="icon-btn"
+            onClick={toggleMute}
+            title={isMuted ? "Unmute Sound" : "Mute Sound"}
+          >
+            {isMuted ? <VolumeX size={18} color="#f43f5e" /> : <Volume2 size={18} color="#10b981" />}
+          </button>
+          <button
+            className="icon-btn"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+          >
+            {theme === 'dark' ? <Sun size={18} color="#f59e0b" /> : <Moon size={18} color="#818cf8" />}
           </button>
           <button className="icon-btn" onClick={() => { setShowSettings(true); setTempKey(geminiKey); }} title="Settings">
             <Settings size={18} />
