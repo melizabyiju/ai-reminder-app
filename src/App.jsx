@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus, Sun, Moon } from 'lucide-react';
+import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus, Sun, Moon, MessageSquare, ListTodo } from 'lucide-react';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
@@ -40,6 +40,9 @@ export default function App() {
   const [geminiKey, setGeminiKey] = useState('');
   const [tempKey, setTempKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Mobile Tab State
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'dashboard'
 
   // Theme Toggle State
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
@@ -790,11 +793,32 @@ export default function App() {
         </div>
       </header>
 
+      {/* Mobile Tab Switcher */}
+      <div className="mobile-tab-bar">
+        <button
+          className={`mobile-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+          onClick={() => setActiveTab('chat')}
+        >
+          <MessageSquare size={16} />
+          <span>Chat AI</span>
+        </button>
+        <button
+          className={`mobile-tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          <ListTodo size={16} />
+          <span>Reminders ({activeReminders.length})</span>
+          {activeReminders.filter(r => isOverdue(r.time)).length > 0 && (
+            <span className="tab-badge-overdue">{activeReminders.filter(r => isOverdue(r.time)).length}</span>
+          )}
+        </button>
+      </div>
+
       {/* Main layout */}
       <div className="main-layout">
 
         {/* Left: Chat */}
-        <div className="chat-panel glass">
+        <div className={`chat-panel glass ${activeTab === 'chat' ? 'mobile-show' : 'mobile-hide'}`}>
           <div className="chat-messages" id="chat-messages">
             {messages.map(msg => (
               <div key={msg.id} className={`bubble-wrap ${msg.role}`}>
@@ -847,7 +871,7 @@ export default function App() {
         </div>
 
         {/* Right: Dashboard */}
-        <div className="dashboard">
+        <div className={`dashboard ${activeTab === 'dashboard' ? 'mobile-show' : 'mobile-hide'}`}>
           {/* Stats Bar */}
           <div className="dashboard-stats">
             <div className="stat-chip active">

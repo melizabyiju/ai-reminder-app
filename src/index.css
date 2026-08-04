@@ -699,30 +699,86 @@ body {
   30%            { transform: translateY(-6px); opacity: 1;  }
 }
 
+/* ─── Mobile Tab Switcher Bar ────────────────────────── */
+.mobile-tab-bar {
+  display: none;
+  padding: 6px 12px;
+  gap: 8px;
+  background: rgba(8, 9, 20, 0.92);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 15;
+}
+.mobile-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--txt-muted);
+  font-family: var(--font);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+.mobile-tab-btn.active {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: var(--txt);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+.tab-badge-overdue {
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+
 /* ─── Mobile / Responsive ────────────────────────────── */
 @media (max-width: 768px) {
+  .mobile-tab-bar { display: flex; }
+
   .app-header { padding: 12px 16px; }
   .brand-name  { font-size: 1.15rem; }
   .brand-badge { display: none; }
 
   .main-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr;
     padding: 10px;
-    gap: 12px;
+    gap: 0;
+    overflow: hidden;
+    height: calc(100dvh - 115px);
+  }
+
+  .chat-panel.mobile-hide,
+  .dashboard.mobile-hide {
+    display: none !important;
+  }
+
+  .chat-panel.mobile-show {
+    display: flex !important;
+    height: 100%;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
-  .chat-panel {
-    min-height: 0;
-    border-radius: var(--radius-sm);
-  }
-
-  .dashboard {
-    max-height: 38vh;
+  .dashboard.mobile-show {
+    display: flex !important;
+    flex-direction: column;
+    height: 100%;
+    max-height: none;
     overflow-y: auto;
-    gap: 10px;
-    padding-bottom: 10px;
+    gap: 12px;
+    padding-bottom: 12px;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -737,14 +793,14 @@ body {
     min-width: 44px;
   }
 
-  .reminder-card { padding: 12px 14px; }
-  .reminder-title { font-size: 0.9rem; }
-  .reminder-time { font-size: 0.77rem; }
+  .reminder-card { padding: 14px 14px; }
+  .reminder-title { font-size: 0.92rem; }
+  .reminder-time { font-size: 0.78rem; }
 
-  .r-btn { width: 34px; height: 34px; }
+  .r-btn { width: 36px; height: 36px; }
 
-  .section-header { padding: 14px 16px; font-size: 0.88rem; }
-  .reminder-list { max-height: 220px; }
+  .section-header { padding: 14px 16px; font-size: 0.9rem; }
+  .reminder-list { max-height: none; flex: 1; }
   .glass { border-radius: var(--radius-sm); }
 
   .modal-overlay { padding: 14px; }
@@ -765,12 +821,10 @@ body {
   .notif-btn { padding: 8px 12px; }
   .brand-name { font-size: 1.05rem; }
 
-  .main-layout { padding: 8px; gap: 8px; }
+  .main-layout { padding: 8px; }
   .chat-messages { padding: 12px 10px; gap: 10px; }
   .chat-input-row { padding: 8px 10px; gap: 6px; }
   .bubble { max-width: 92%; font-size: 0.88rem; }
-
-  .dashboard { max-height: 32vh; }
 }
 
 /* Safe area insets (notch phones) */
