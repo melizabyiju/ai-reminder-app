@@ -4,18 +4,29 @@ import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
-const SYSTEM_PROMPT = `You are RemindAI, a reminder assistant. Today is {{CURRENT_TIME}}.
+const SYSTEM_PROMPT = `You are RemindAI, a reminder assistant. Current date/time: {{CURRENT_TIME}}.
 
-Rules:
-- Accept ANY natural language, fix typos silently.
-- If the user provides multiple reminder commands in one message (e.g. "drink water in 10m, call dad at 6pm, and pay bills tomorrow"), parse EVERY item and return separate reminder objects in the "reminders" array!
-- If the user mentions a goal/event without enough details (time, date), ask ONE short follow-up question.
-- Support any future date/time for reminders.
-- Keep replies short and friendly.
+CRITICAL RULES (MUST follow every one):
+1. Accept ANY natural language input. Fix typos silently.
+2. **MULTIPLE REMINDERS**: If the user mentions MORE than one task/event (separated by commas, "and", "also", semicolons, or new lines), you MUST parse EACH ONE into a SEPARATE reminder object in the "reminders" array. NEVER merge them. NEVER skip any. If user says "clean my room at 10:30, change bedsheets, write records at 10:15 and 3pm" — that is 4 separate reminders.
+3. **TITLES**: Use the user's EXACT words as the reminder title. Do NOT rephrase, summarize, or genericize. If user says "Reminder to meeting at 145", the title should be "Meeting" (extract the task name, strip time info). If user says "clean my room", title = "Clean my room". If user says "change bedsheets", title = "Change bedsheets".
+4. **TIMES**: Parse times intelligently. "at 10 30" = 10:30, "at 3pm" = 15:00, "in 10m" = 10 minutes from now, "tomorrow" = next day 09:00. If a task has no explicit time but is grouped with timed tasks, ask a follow-up ONLY for that specific task.
+5. If the user mentions a task without ANY time/date context at all, ask ONE short follow-up.
+6. Keep replies short, friendly, use emoji sparingly.
 
-Always reply with ONLY this JSON (no markdown, no code fences):
-{"message":"reply","reminders":[{"title":"task title","time":"ISO8601"}]}
-If no reminders yet, use: {"message":"reply","reminders":[]}`;
+OUTPUT FORMAT — respond with ONLY this JSON (no markdown, no code fences, no extra text):
+{"message":"your friendly reply","reminders":[{"title":"exact task name","time":"ISO8601 datetime"}]}
+If no reminders to create: {"message":"your reply","reminders":[]}
+
+EXAMPLES:
+User: "remind me to clean my room at 10:30, change my bedsheets, also to write records at 10:15 and 3pm"
+Response: {"message":"Got it! I created 4 separate reminders for you: • Clean my room (Today, 10:30) • Change bedsheets (Today, 10:30) • Write records (Today, 10:15) • Write records (Today, 15:00)","reminders":[{"title":"Clean my room","time":"...T10:30:00"},{"title":"Change bedsheets","time":"...T10:30:00"},{"title":"Write records","time":"...T10:15:00"},{"title":"Write records","time":"...T15:00:00"}]}
+
+User: "Reminder to meeting at 145"
+Response: {"message":"Got it! What time would you like me to set the reminder for \\"Meeting\\"? Did you mean 1:45 PM?","reminders":[]}
+
+User: "Meeting at 9 55"
+Response: {"message":"Got it! Scheduled \\"Meeting\\" for today at 09:55.","reminders":[{"title":"Meeting","time":"...T09:55:00"}]}`;
 
 
 export default function App() {
@@ -47,6 +58,7 @@ export default function App() {
   const recognitionRef = useRef(null);
   const shouldKeepListeningRef = useRef(false);
   const baseTextRef = useRef('');
+  const sessionFinalRef = useRef('');
 
   const toggleVoiceInput = () => {
     if (isListening) {
@@ -64,47 +76,80 @@ export default function App() {
 
     try {
       shouldKeepListeningRef.current = true;
-      baseTextRef.current = input; // Capture existing text in textbox
+      baseTextRef.current = input;
+      sessionFinalRef.current = '';
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-      recognition.onstart = () => setIsListening(true);
-      recognition.onresult = (event) => {
-        let transcript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        const base = baseTextRef.current.trim();
-        setInput(base ? `${base} ${transcript}` : transcript);
-      };
-      recognition.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
-        if (event.error === 'no-speech' && shouldKeepListeningRef.current) {
-          return;
-        }
-        if (event.error !== 'aborted' && event.error !== 'no-speech') {
-          setIsListening(false);
-          shouldKeepListeningRef.current = false;
-        }
-      };
-      recognition.onend = () => {
-        if (shouldKeepListeningRef.current) {
-          try {
-            recognition.start();
-          } catch (e) {
+      const startRecognition = () => {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = !isMobile;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => setIsListening(true);
+
+        recognition.onresult = (event) => {
+          let finalText = '';
+          let interimText = '';
+
+          for (let i = 0; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              finalText += result[0].transcript;
+            } else {
+              interimText += result[0].transcript;
+            }
+          }
+
+          if (isMobile) {
+            const combined = [baseTextRef.current.trim(), sessionFinalRef.current.trim(), finalText, interimText]
+              .filter(Boolean).join(' ');
+            setInput(combined);
+
+            if (finalText) {
+              sessionFinalRef.current = (sessionFinalRef.current + ' ' + finalText).trim();
+            }
+          } else {
+            const allTranscript = (finalText + interimText).trim();
+            const base = baseTextRef.current.trim();
+            setInput(base ? `${base} ${allTranscript}` : allTranscript);
+          }
+        };
+
+        recognition.onerror = (event) => {
+          console.warn('Speech recognition error:', event.error);
+          if (event.error === 'no-speech' && shouldKeepListeningRef.current) {
+            return;
+          }
+          if (event.error !== 'aborted' && event.error !== 'no-speech') {
             setIsListening(false);
             shouldKeepListeningRef.current = false;
           }
-        } else {
-          setIsListening(false);
-        }
+        };
+
+        recognition.onend = () => {
+          if (shouldKeepListeningRef.current) {
+            try {
+              if (isMobile) {
+                baseTextRef.current = (baseTextRef.current.trim() + ' ' + sessionFinalRef.current.trim()).trim();
+                sessionFinalRef.current = '';
+              }
+              startRecognition();
+            } catch (e) {
+              setIsListening(false);
+              shouldKeepListeningRef.current = false;
+            }
+          } else {
+            setIsListening(false);
+          }
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
       };
 
-      recognitionRef.current = recognition;
-      recognition.start();
+      startRecognition();
     } catch (e) {
       console.warn('Speech recognition init failed:', e);
       setIsListening(false);
@@ -144,7 +189,7 @@ export default function App() {
 
   const chatEndRef = useRef(null);
 
-  // On mount: load reminders + API key + sound settings, clear chat
+  // On mount: load reminders + API key + sound settings, register SW, clear chat
   useEffect(() => {
     const savedReminders = localStorage.getItem('reminders');
     if (savedReminders) setReminders(JSON.parse(savedReminders));
@@ -169,6 +214,13 @@ export default function App() {
 
     if ('Notification' in window) setNotifStatus(Notification.permission);
 
+    // Auto-register service worker for background notifications
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        console.log('Service Worker registered for background reminders');
+      }).catch(e => console.warn('SW registration failed:', e));
+    }
+
     // Always start chat fresh each session
     setMessages([{
       id: 1,
@@ -176,6 +228,16 @@ export default function App() {
       text: "Hi! I'm RemindAI 👋 Just tell me anything — like *'I have a presentation tomorrow'* or *'remind me to call Dad at 6pm'* — and I'll handle it for you."
     }]);
   }, []);
+
+  // Sync reminders to Service Worker for background notifications
+  useEffect(() => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SYNC_REMINDERS',
+        reminders: reminders
+      });
+    }
+  }, [reminders]);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -561,28 +623,39 @@ export default function App() {
 
   const handleLocalAssistant = (text) => {
     // Check for multi-reminder input (e.g. "drink water in 10m, call dad at 6pm, and pay bills tomorrow")
-    const clauses = text.split(/(?:,|\n|;|\band\b)/i)
+    const rawClauses = text.split(/(?:,|;|\n|\balso\b|\band\b)/i)
       .map(c => c.trim())
-      .filter(c => c.length > 2 && /(in\s+\d+|at\s+\d+|\d+\s*(?:pm|am)|tomorrow|tmrw|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(c));
+      .filter(c => c.length > 2);
 
-    if (clauses.length > 1) {
+    // If we have multiple clauses AND at least one has a time pattern, treat as multi-reminder
+    const hasTimePattern = rawClauses.some(c => /(in\s+\d+|at\s+\d+|\d+\s*(?:pm|am)|tomorrow|tmrw|today)/i.test(c));
+
+    if (rawClauses.length > 1 && hasTimePattern) {
       const allReminders = [];
       const lines = [];
+      const noTimeClauses = [];
 
-      clauses.forEach(clause => {
+      rawClauses.forEach(clause => {
         const res = parseSingleLocalReminder(clause);
         if (res.reminders.length > 0) {
           allReminders.push(...res.reminders);
           const r = res.reminders[0];
           lines.push(`• **${r.title}** (${formatTime(r.time)})`);
+        } else {
+          // Clause had no time — still create reminder if it looks like a task
+          const hasTimeInfo = /(in\s+\d+|at\s+\d+|\d+\s*(?:pm|am)|tomorrow|tmrw|today)/i.test(clause);
+          if (!hasTimeInfo && clause.length > 2) {
+            noTimeClauses.push(clause);
+          }
         }
       });
 
       if (allReminders.length > 0) {
-        return {
-          message: `Got it! I created ${allReminders.length} separate reminders for you:\n\n${lines.join('\n')}`,
-          reminders: allReminders
-        };
+        let message = `Got it! I created ${allReminders.length} separate reminders for you:\n\n${lines.join('\n')}`;
+        if (noTimeClauses.length > 0) {
+          message += `\n\nI couldn't determine the time for: ${noTimeClauses.map(c => `"${c}"`).join(', ')}. What time should I set ${noTimeClauses.length > 1 ? 'those' : 'that'} for?`;
+        }
+        return { message, reminders: allReminders };
       }
     }
 

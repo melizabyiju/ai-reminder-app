@@ -491,27 +491,94 @@ body {
 /* ─── Mobile / Responsive ────────────────────────────── */
 @media (max-width: 768px) {
   .app-header { padding: 10px 14px; }
-  .brand-name  { font-size: 1.1rem; }
+  .brand-name  { font-size: 1.05rem; }
 
   .main-layout {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr auto;
-    padding: 10px;
-    gap: 10px;
+    padding: 8px;
+    gap: 8px;
     overflow: hidden;
   }
 
-  /* Stack: chat first, then dashboard below (collapsed) */
-  .chat-panel { min-height: 0; }
-  .dashboard  { max-height: 220px; overflow-y: auto; }
+  /* Chat panel: take majority of screen */
+  .chat-panel {
+    min-height: 0;
+    border-radius: var(--radius-sm);
+  }
 
-  .bubble { max-width: 88%; font-size: 0.9rem; }
-  .chat-messages { padding: 14px 12px; gap: 12px; }
-  .chat-input-row { padding: 10px 12px; }
+  /* Dashboard: collapsible scrollable section at bottom */
+  .dashboard {
+    max-height: 35vh;
+    overflow-y: auto;
+    gap: 8px;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bubble { max-width: 88%; font-size: 0.9rem; padding: 10px 13px; }
+  .chat-messages { padding: 12px 10px; gap: 10px; }
+  .chat-input-row { padding: 8px 10px; gap: 8px; }
+  .chat-input { font-size: 0.9rem; padding: 10px 12px; }
+
+  /* Touch-friendly buttons */
+  .mic-btn, .send-btn {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+  }
+
+  .reminder-card { padding: 11px 12px; }
+  .reminder-title { font-size: 0.88rem; }
+  .reminder-time { font-size: 0.75rem; }
+
+  .r-btn { width: 32px; height: 32px; }
+
+  .section-header { padding: 12px 14px; font-size: 0.85rem; }
+
+  .reminder-list { max-height: 200px; }
+
+  .glass { border-radius: var(--radius-sm); }
+
+  /* Modal adjustments for mobile */
+  .modal-overlay { padding: 12px; }
+  .modal {
+    width: 100%;
+    max-width: 100%;
+    padding: 20px;
+    border-radius: var(--radius-sm);
+  }
+  .modal-header h3 { font-size: 1rem; }
+  .modal-input { font-size: 0.9rem; padding: 10px 12px; }
+  .modal-label { font-size: 0.8rem; }
+
+  /* Avatar sizing */
+  .avatar { width: 26px; height: 26px; }
 }
 
 @media (max-width: 400px) {
   .notif-btn span, .notif-btn svg + * { display: none; }
   .notif-btn { padding: 7px 10px; }
-  .brand-name { font-size: 1rem; }
+  .brand-name { font-size: 0.95rem; }
+
+  .main-layout { padding: 6px; gap: 6px; }
+  .chat-messages { padding: 10px 8px; gap: 8px; }
+  .chat-input-row { padding: 6px 8px; gap: 6px; }
+  .bubble { max-width: 92%; font-size: 0.87rem; }
+  .chat-input { font-size: 0.87rem; padding: 9px 10px; }
+
+  .dashboard { max-height: 30vh; }
 }
+
+/* ─── Safe area insets (notch phones) ────────────────── */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .app-header {
+    padding-top: max(10px, env(safe-area-inset-top));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .chat-input-row {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+}
+
