@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus, Sun, Moon, MessageSquare, ListTodo } from 'lucide-react';
+import { Send, Bell, BellOff, Calendar, Check, Trash2, Bot, Settings, Sparkles, ChevronDown, ChevronUp, X, Volume2, VolumeX, Upload, Play, Mic, MicOff, Plus, Sun, Moon, MessageSquare, ListTodo, Menu } from 'lucide-react';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
@@ -41,8 +41,8 @@ export default function App() {
   const [tempKey, setTempKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Mobile Tab State
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'dashboard'
+  // Mobile Side Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Theme Toggle State
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
@@ -787,38 +787,129 @@ export default function App() {
           >
             {theme === 'dark' ? <Sun size={18} color="#f59e0b" /> : <Moon size={18} color="#818cf8" />}
           </button>
+          <button
+            className="icon-btn mobile-menu-btn"
+            onClick={() => setIsDrawerOpen(true)}
+            title="Open Reminders Menu"
+          >
+            <Menu size={18} />
+            {activeReminders.length > 0 && <span className="drawer-badge-dot" />}
+          </button>
           <button className="icon-btn" onClick={() => { setShowSettings(true); setTempKey(geminiKey); }} title="Settings">
             <Settings size={18} />
           </button>
         </div>
       </header>
 
-      {/* Mobile Tab Switcher */}
-      <div className="mobile-tab-bar">
-        <button
-          className={`mobile-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-          onClick={() => setActiveTab('chat')}
-        >
-          <MessageSquare size={16} />
-          <span>Chat AI</span>
-        </button>
-        <button
-          className={`mobile-tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dashboard')}
-        >
-          <ListTodo size={16} />
-          <span>Reminders ({activeReminders.length})</span>
-          {activeReminders.filter(r => isOverdue(r.time)).length > 0 && (
-            <span className="tab-badge-overdue">{activeReminders.filter(r => isOverdue(r.time)).length}</span>
+      {/* Mobile Drawer Overlay */}
+      <div
+        className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`}
+        onClick={() => setIsDrawerOpen(false)}
+      />
+
+      {/* Mobile Slide-out Drawer Panel */}
+      <aside className={`mobile-drawer glass ${isDrawerOpen ? 'open' : ''}`}>
+        <div className="drawer-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Calendar size={18} color="#a855f7" />
+            <span style={{ fontWeight: 700, fontSize: '1.05rem', fontFamily: 'var(--font-display)' }}>
+              Reminders ({activeReminders.length})
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button className="icon-btn" style={{ width: '32px', height: '32px' }} onClick={() => { setIsDrawerOpen(false); openManualAddModal(); }}>
+              <Plus size={16} />
+            </button>
+            <button className="icon-btn" style={{ width: '32px', height: '32px' }} onClick={() => setIsDrawerOpen(false)}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="drawer-content">
+          {/* Stats Bar */}
+          <div className="dashboard-stats" style={{ marginBottom: '16px' }}>
+            <div className="stat-chip active">
+              <span className="stat-count">{activeReminders.length}</span>
+              <span className="stat-label">Upcoming</span>
+            </div>
+            <div className={`stat-chip ${activeReminders.filter(r => isOverdue(r.time)).length > 0 ? 'overdue' : ''}`}>
+              <span className="stat-count">{activeReminders.filter(r => isOverdue(r.time)).length}</span>
+              <span className="stat-label">Overdue</span>
+            </div>
+            <div className="stat-chip completed">
+              <span className="stat-count">{completedReminders.length}</span>
+              <span className="stat-label">Done</span>
+            </div>
+          </div>
+
+          {/* Active Reminders List */}
+          <div className="reminder-section">
+            <div className="reminder-list">
+              {activeReminders.length === 0 ? (
+                <div className="empty-state">No reminders yet. Chat to add one!</div>
+              ) : (
+                activeReminders.map(r => (
+                  <div key={r.id} className={`reminder-card ${isOverdue(r.time) ? 'overdue' : ''}`}>
+                    <div className="reminder-body">
+                      <div className="reminder-title">{r.title}</div>
+                      <div className={`reminder-time ${isOverdue(r.time) ? 'overdue-text' : ''}`}>
+                        {isOverdue(r.time) ? '⚠️ Overdue · ' : '🕐 '}
+                        {formatTime(r.time)}
+                      </div>
+                    </div>
+                    <div className="reminder-btns">
+                      <button className="r-btn done" onClick={() => toggleComplete(r.id)} title="Mark done">
+                        <Check size={14} />
+                      </button>
+                      <button className="r-btn del" onClick={() => deleteReminder(r.id)} title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Completed Reminders */}
+          {completedReminders.length > 0 && (
+            <div className="reminder-section" style={{ marginTop: '16px' }}>
+              <button className="section-header collapsible" onClick={() => setShowCompleted(v => !v)}>
+                <Check size={16} color="#10b981" />
+                <span>Completed ({completedReminders.length})</span>
+                {showCompleted ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+              {showCompleted && (
+                <div className="reminder-list">
+                  {completedReminders.map(r => (
+                    <div key={r.id} className="reminder-card completed">
+                      <div className="reminder-body">
+                        <div className="reminder-title done-title">{r.title}</div>
+                        <div className="reminder-time">{formatTime(r.time)}</div>
+                      </div>
+                      <div className="reminder-btns">
+                        <button className="r-btn done" onClick={() => toggleComplete(r.id)} title="Undo">
+                          <Check size={14} />
+                        </button>
+                        <button className="r-btn del" onClick={() => deleteReminder(r.id)} title="Delete">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-        </button>
-      </div>
+        </div>
+      </aside>
 
       {/* Main layout */}
       <div className="main-layout">
 
         {/* Left: Chat */}
-        <div className={`chat-panel glass ${activeTab === 'chat' ? 'mobile-show' : 'mobile-hide'}`}>
+        <div className="chat-panel glass">
           <div className="chat-messages" id="chat-messages">
             {messages.map(msg => (
               <div key={msg.id} className={`bubble-wrap ${msg.role}`}>
